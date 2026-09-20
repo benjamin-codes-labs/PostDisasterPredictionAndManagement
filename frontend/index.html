@@ -1,0 +1,443 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>垃刻搜圾</title>
+    <!-- 引入Leaflet地图库（CDN） -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- 引入Leaflet热力图插件 -->
+    <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+    <!-- 引入自定义CSS -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- 页面入场动画覆盖层 -->
+    <div id="introOverlay" class="intro-overlay">
+        <div class="intro-content">
+            <div class="intro-logo">垃刻搜圾 </div>
+            <div class="intro-sub">
+                <span class="lang-zh">災後重建 · 智能識別</span>
+                <span class="lang-en" style="display:none">Disaster Recovery · Smart Detection</span>
+            </div>
+            <div class="intro-tip">
+                <div class="mode-select">
+                    <button id="cameraModeBtn">
+                        <span class="lang-zh">垃圾識別</span><span class="lang-en" style="display:none">Garbage Recognition</span>
+                    </button>
+                    <button id="distributionModeBtn">
+                        <span class="lang-zh">垃圾分佈</span><span class="lang-en" style="display:none">Garbage Distribution</span>
+                    </button>
+                </div>
+                <div style="margin-top:12px; color:#fff; opacity:0.85;">
+                    <span class="lang-zh">請先選擇顯示模式</span>
+                    <span class="lang-en" style="display:none">Please choose a mode</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- 主页面切换导航栏 -->
+    <nav style="max-width:1400px;margin:0 auto 18px auto;padding:0 18px 0 18px;display:flex;align-items:center;gap:28px;">
+    <button id="langSwitch" style="margin-left:auto;padding:6px 18px;border-radius:18px;border:none;background:#3498db;color:#fff;cursor:pointer;font-size:15px;">English</button>
+        <a href="#" style="font-size:20px;font-weight:700;color:#3498db;text-decoration:none;">垃刻搜圾</a>
+        <a href="#main" style="font-size:16px;color:#2c3e50;text-decoration:none;">垃圾識別</a>
+        <a href="#map" style="font-size:16px;color:#2c3e50;text-decoration:none;">地圖佈點</a>
+        <a href="#sevenDayForecast" style="font-size:16px;color:#2c3e50;text-decoration:none;">未來七日天氣</a>
+        <a href="#disasterSimulation" style="font-size:16px;color:#2c3e50;text-decoration:none;">災害模擬</a>
+        <a href="#usageAndEmergency" style="font-size:16px;color:#2c3e50;text-decoration:none;">避險中心</a>
+        <a href="#disasterGuides" style="font-size:16px;color:#2c3e50;text-decoration:none;">災害應對要點</a>
+       <!-- <a href="#weather" style="font-size:16px;color:#2c3e50;text-decoration:none;">天气气旋</a>
+        <a href="#flood" style="font-size:16px;color:#2c3e50;text-decoration:none;">全球水浸</a>-->
+    </nav>
+    <!-- 天气与气温显示 -->
+    <div id="weatherInfo" style="max-width:1400px;margin:0 auto 18px auto;padding:12px 18px 8px 18px;background:rgba(255,255,255,0.85);border-radius:12px;box-shadow:0 2px 8px rgba(44,62,80,0.08);display:flex;align-items:center;gap:18px;font-size:17px;color:#2c3e50;">
+        <span id="weatherIcon" style="font-size:28px;"></span>
+        <span id="weatherText">正在獲取天氣資訊...</span>
+    </div>
+
+    <!-- 七日天气预报 -->
+    <div id="sevenDayForecast" style="max-width:1400px;margin:0 auto 18px auto;padding:12px 18px;background:rgba(255,255,255,0.95);border-radius:12px;box-shadow:0 2px 8px rgba(44,62,80,0.08);">
+        <h3><span class="lang-zh">未來七日天氣</span><span class="lang-en" style="display:none">7-Day Forecast</span></h3>
+        <div id="forecastCards" class="forecast-cards">正在加载天气预报...</div>
+        <!-- 今日预测与整点实况 -->
+        <div id="todaySection" style="margin-top:12px;">
+            <h4><span class="lang-zh">今日预测</span><span class="lang-en" style="display:none">Today</span></h4>
+            <div id="todaySummary" class="today-forecast">加载中...</div>
+
+            <h4 style="margin-top:10px;"><span class="lang-zh">整点实况</span><span class="lang-en" style="display:none">Hourly Observations</span></h4>
+            <div id="hourlyNow" class="hourly-row">正在加载整点实况...</div>
+        </div>
+    </div>
+    <!-- 实时空气质量（移动到七日预报下方） -->
+    <div id="airQuality" style="max-width:1400px;margin:12px auto;padding:12px 18px;background:rgba(255,255,255,0.95);border-radius:12px;box-shadow:0 2px 8px rgba(44,62,80,0.08);">
+        <h3 style="display:flex;align-items:center;gap:12px;"><span class="lang-zh">實時空氣品質</span><span class="lang-en" style="display:none">Air Quality</span>
+            <small id="aqiLocation" style="font-size:13px;color:#666;margin-left:8px;">（澳門 / Macau）</small>
+        </h3>
+        <div class="aqi-card" id="aqiCard">
+            <div style="display:flex;align-items:center;gap:14px;">
+                <div id="aqiValue" style="font-size:28px;font-weight:800;color:#27ae60;">--</div>
+                <div>
+                    <div id="aqiCategory" style="font-size:16px;color:#666;"><span class="lang-zh">正在获取中...</span><span class="lang-en" style="display:none">Loading...</span></div>
+                    <div id="aqiDetails" style="font-size:13px;color:#888;margin-top:6px;">PM2.5: -- μg/m³ · PM10: -- μg/m³</div>
+                </div>
+                <div style="margin-left:auto;">
+                    <button id="refreshAqi" style="padding:8px 12px;border-radius:14px;border:none;background:#3498db;color:#fff;cursor:pointer;">刷新</button>
+                </div>
+            </div>
+            <div id="aqiUpdated" style="margin-top:8px;font-size:12px;color:#999;">--</div>
+        </div>
+    </div>
+
+    <!-- 灾害模拟区块 -->
+    <div id="disasterSimulation" style="max-width:1400px;margin:0 auto 18px auto;padding:12px 18px;background:rgba(255,255,255,0.95);border-radius:12px;box-shadow:0 2px 8px rgba(44,62,80,0.08);">
+        <h3 style="font-size: larger; font-weight: bold;"><span class="lang-zh">災害模擬</span><span class="lang-en" style="display:none">Disaster Simulation</span></h3>
+        <div style="display: flex; gap: 20px; flex-wrap: wrap; align-items: center;">
+            <div>
+                <label style="font-weight: bold;">🌪️ <span class="lang-zh">颱風等級：</span><span class="lang-en" style="display:none">Typhoon Level:</span></label>
+                <select id="typhoonLevel">
+                    <option value="none">無</option>
+                    <option value="1">一號風球</option>
+                    <option value="3">三號風球</option>
+                    <option value="8se">八號東南風球</option>
+                    <option value="8sw">八號西南風球</option>
+                    <option value="8ne">八號東北風球</option>
+                    <option value="8nw">八號西北風球</option>
+                    <option value="9">九號風球</option>
+                    <option value="10">十號風球</option>
+                </select>
+            </div>
+            <div>
+                <label style="font-weight: bold;">🏳️ <span class="lang-zh">風向：</span><span class="lang-en" style="display:none">Wind Direction:</span></label>
+                <select id="windDirection">
+                    <option value="none">無</option>
+                    <option value="東南">東南</option>
+                    <option value="西南">西南</option>
+                    <option value="東北">東北</option>
+                    <option value="西北">西北</option>
+                </select>
+            </div>
+            <div>
+                <label style="font-weight: bold;">🌊 <span class="lang-zh">風暴潮等級：</span><span class="lang-en" style="display:none">Storm Surge Level:</span></label>
+                <select id="stormSurgeLevel">
+                    <option value="none">無</option>
+                    <option value="blue">藍色 (0.5m以下)</option>
+                    <option value="yellow">黃色 (0.5-1.0m)</option>
+                    <option value="orange">橙色 (1.0-1.5m)</option>
+                    <option value="red">紅色 (1.5-2.5m)</option>
+                    <option value="black">黑色 (2.5m以上)</option>
+                </select>
+            </div>
+            <div>
+                <label style="font-weight: bold;">🌧️ <span class="lang-zh">暴雨等級：</span><span class="lang-en" style="display:none">Rainstorm Level:</span></label>
+                <select id="rainstormLevel">
+                    <option value="none">無</option>
+                    <option value="yellow">黃色 (20mm/h)</option>
+                    <option value="red">紅色 (50mm/h)</option>
+                    <option value="black">黑色 (80mm/h)</option>
+                </select>
+            </div>
+            <div>
+                <button id="setSimulation" style="font-weight: bold;">設定模擬</button>
+                <button id="randomSimulation" style="font-weight: bold;">隨機模擬</button>
+            </div>
+        </div>
+        <div id="simulationDisplay" style="margin-top: 10px; font-size: larger; font-weight: bold;"></div>
+    </div>
+
+    <!-- 使用示例与紧急求生电话（放置于导航栏下方，便于操作时查看） -->
+    <div id="usageAndEmergency" style="max-width:1400px;margin:0 auto 18px auto;padding:12px 18px;background:rgba(255,255,255,0.95);border-radius:12px;box-shadow:0 2px 8px rgba(44,62,80,0.08);">
+        <h2><span class="lang-zh">使用範例</span><span class="lang-en" style="display:none">Usage Examples</span></h2>
+        <div class="examples">
+            <div class="example-card">
+                <h4><span class="lang-zh">識別垃圾並標註位置</span><span class="lang-en" style="display:none">Recognize garbage & mark location</span></h4>
+                <ol>
+                    <li><span class="lang-zh">點擊"開啟攝像頭"，將垃圾置於鏡頭中央。</span><span class="lang-en" style="display:none">Click 'Start Camera' and center the garbage in view.</span></li>
+                    <li><span class="lang-zh">點擊"拍攝識別"，等待後台返回識別結果。</span><span class="lang-en" style="display:none">Click 'Recognize' and wait for the detection result.</span></li>
+                    <li><span class="lang-zh">若識別到目標，系統會在當前地圖中心添加標註。</span><span class="lang-en" style="display:none">If detected, a marker is added at the current map center.</span></li>
+                    <li><span class="lang-zh">可以匯出 CSV 用於統計或救援分配。</span><span class="lang-en" style="display:none">Export the CSV for reporting or rescue allocation.</span></li>
+                </ol>
+            </div>
+
+            <div class="example-card">
+                <h4><span class="lang-zh">查看城市熱力與快速定位</span><span class="lang-en" style="display:none">View city heatmaps & quick center</span></h4>
+                <ol>
+                    <li><span class="lang-zh">在"城市地圖預覽"中查看各城市分佈。</span><span class="lang-en" style="display:none">Check the 'City Map Preview' for distributions.</span></li>
+                    <li><span class="lang-zh">（建議）點擊某城市地圖並使用地圖控制項將主地圖移動到該城市進行細緻查看。</span><span class="lang-en" style="display:none">(Recommended) Click a city map and center the main map there for details.</span></li>
+                    <li><span class="lang-zh">使用熱力圖切換查看高密度區域（需上傳足夠資料）。</span><span class="lang-en" style="display:none">Use heatmap toggle to see hotspots (requires sufficient data).</span></li>
+                </ol>
+            </div>
+        </div>
+
+        <h2 style="margin-top:16px; font-size: larger; font-weight: bold;"><span class="lang-zh">澳門各堂區避險中心</span><span class="lang-en" style="display:none">Macau Parish Shelters</span></h2>
+        <div class="emergency-grid">
+            <div class="emergency-card">
+                <h4 style="font-size: larger; font-weight: bold;">花地瑪堂區</h4>
+                <details>
+                    <summary>點擊顯示一級避險中心和二級避險中心</summary>
+                    <p><strong>一級避險中心：</strong><br>青洲避風中心</p>
+                    <p><strong>二級避險中心：</strong><br>中葡職業技術學校體育館<br>澳門理工大學體育館</p>
+                </details>
+            </div>
+
+            <div class="emergency-card">
+                <h4 style="font-size: larger; font-weight: bold;">聖安多尼堂區</h4>
+                <details>
+                    <summary>點擊顯示一級避險中心和二級避險中心</summary>
+                    <p><strong>一級避險中心：</strong><br>無</p>
+                    <p><strong>二級避險中心：</strong><br>營地街市（緊急疏散停留點）</p>
+                </details>
+            </div>
+
+            <div class="emergency-card">
+                <h4 style="font-size: larger; font-weight: bold;">大堂區</h4>
+                <details>
+                    <summary>點擊顯示一級避險中心和二級避險中心</summary>
+                    <p><strong>一級避險中心：</strong><br>澳門工會聯合總會工人體育場</p>
+                    <p><strong>二級避險中心：</strong><br>塔石體育館（A館）<br>塔石體育館（B館）<br>澳門海星中學<br>澳門培正中學<br>利瑪竇中學<br>鏡平學校<br>沙梨頭街市（集合點及緊急疏散停留點）<br>下環街市（集合點及緊急疏散停留點）</p>
+                </details>
+            </div>
+
+            <div class="emergency-card">
+                <h4 style="font-size: larger; font-weight: bold;">望德堂區</h4>
+                <details>
+                    <summary>點擊顯示一級避險中心和二級避險中心</summary>
+                    <p><strong>一級避險中心：</strong><br>無</p>
+                    <p><strong>二級避險中心：</strong><br>澳門培正中學</p>
+                </details>
+            </div>
+
+            <div class="emergency-card">
+                <h4 style="font-size: larger; font-weight: bold;">風順堂區</h4>
+                <details>
+                    <summary>點擊顯示一級避險中心和二級避險中心</summary>
+                    <p><strong>一級避險中心：</strong><br>無</p>
+                    <p><strong>二級避險中心：</strong><br>澳門慈幼中學</p>
+                </details>
+            </div>
+
+            <div class="emergency-card">
+                <h4 style="font-size: larger; font-weight: bold;">嘉模堂區</h4>
+                <details>
+                    <summary>點擊顯示一級避險中心和二級避險中心</summary>
+                    <p><strong>一級避險中心：</strong><br>氹仔及路環社會工作中心（氹仔分站）</p>
+                    <p><strong>二級避險中心：</strong><br>奧林匹克體育中心</p>
+                </details>
+            </div>
+
+            <div class="emergency-card">
+                <h4 style="font-size: larger; font-weight: bold;">路凼填海區</h4>
+                <details>
+                    <summary>點擊顯示一級避險中心和二級避險中心</summary>
+                    <p><strong>一級避險中心：</strong><br>無</p>
+                    <p><strong>二級避險中心：</strong><br>澳門東亞運動會體育館</p>
+                </details>
+            </div>
+
+            <div class="emergency-card">
+                <h4 style="font-size: larger; font-weight: bold;">聖方濟各堂區</h4>
+                <details>
+                    <summary>點擊顯示一級避險中心和二級避險中心</summary>
+                    <p><strong>一級避險中心：</strong><br>澳門保安部隊高等學校</p>
+                    <p><strong>二級避險中心：</strong><br>飛鷹培訓基地<br>氹仔及路環社會工作中心</p>
+                </details>
+            </div>
+        </div>
+        <div style="margin-top:10px;color:#888;font-size:13px;"> <span class="lang-zh">註：避險中心分為第1級（八號或以上風球）和第2級（撤離避險），請以民政總署官方公告為準。</span><span class="lang-en" style="display:none">Note: Shelters are divided into Level 1 (T8 or above) and Level 2 (evacuation); follow official announcements from Civic and Municipal Affairs Bureau.</span></div>
+    </div>
+    <div class="container">
+        <div class="camera-section" id="main" style="display:none;">
+            <h2>垃圾拍攝與識別</h2>
+            <div style="display: flex; flex-direction: column; align-items: center;">
+                <video id="cameraPreview" autoplay playsinline style="max-width:100%; height:auto; background:#000;"></video>
+                <canvas id="captureCanvas" style="display: none;"></canvas>
+                <div class="camera-btns">
+                    <button id="startCamera">開啟攝像頭</button>
+                    <button id="capturePhoto" disabled>拍攝識別</button>
+                    <button id="resetCamera" disabled>重設</button>
+                </div>
+                <div id="recognitionResult" class="result"></div>
+            </div>
+            <div style="margin-top: 20px; text-align: center; color: #888; font-size: 13px;">
+                <span>請將垃圾置於攝像頭中央，點擊"拍攝識別"自動分析</span>
+            </div>
+        </div>
+
+        <!-- 地图可视化区域 -->
+        <div class="map-section" id="map">
+            <div style="margin-bottom:12px;">
+                <button id="heatmapSwitch" style="padding:8px 18px;border-radius:18px;border:none;background:#e67e22;color:#fff;cursor:pointer;font-size:15px;">切換熱力圖</button>
+            </div>
+    <!-- 灾害预警区块 -->
+    <div id="alertInfo" style="max-width:1400px;margin:18px auto 0 auto;padding:16px 18px;background:rgba(255,255,255,0.95);border-radius:12px;box-shadow:0 2px 8px rgba(44,62,80,0.08);font-size:17px;color:#c0392b;display:none;">
+        <strong>災害預警：</strong>
+        <span id="alertText">暫無預警資訊</span>
+    </div>
+            <h2>垃圾佈點地圖</h2>
+            <div class="filter">
+                <label><input type="checkbox" value="person" checked><span class="icon">♻️</span> 可回收物</label>
+                <label><input type="checkbox" value="bottle" checked><span class="icon">🍌</span> 廚餘垃圾</label>
+                <label><input type="checkbox" value="can" checked><span class="icon">⚠️</span> 有害垃圾</label>
+                <label><input type="checkbox" value="tin can" checked><span class="icon">🗑️</span> 其他垃圾</label>
+                <label><input type="checkbox" value="large" checked><span class="icon">🏗️</span> 大型垃圾</label>
+            </div>
+            <div id="garbageMap"></div>
+            <div style="display: flex; gap: 10px; margin-top: 10px;">
+                <button id="randomGarbage">隨機定位垃圾</button>
+                <input type="file" id="importData" accept=".csv" style="display:none">
+                <button id="importBtn">匯入垃圾資料（CSV）</button>
+                <button id="exportData">匯出垃圾資料（CSV）</button>
+            </div>
+            <div style="margin-top: 18px; color: #888; font-size: 13px; text-align: center;">
+                <span>可通過篩選、隨機定位或手動點擊地圖添加垃圾點</span>
+            </div>
+            <!-- 新增：按大洲分组的城市地图预览 -->
+            <h2 style="margin-top:18px;">澳門城市地圖預覽</h2>
+
+            <div class="continent-section" id="continent-asia">
+                <h3 class="continent-title">澳門半島</h3>
+                <div class="city-maps">
+                    <div id="map-shanghai" class="cityMap" data-city=""></div>
+                    <div id="map-beijing" class="cityMap" data-city="珠海"></div>
+                    <div id="map-guangzhou" class="cityMap" data-city="廣州"></div>
+                    <div id="map-shenzhen" class="cityMap" data-city="深圳"></div>
+                    <div id="map-tokyo" class="cityMap" data-city="東京"></div>
+                   <!-- <div id="map-seoul" class="cityMap" data-city="首尔"></div>
+                    <div id="map-manila" class="cityMap" data-city="马尼拉"></div>
+                    <div id="map-newdelhi" class="cityMap" data-city="新德里"></div>-->
+                </div>
+            </div>
+
+            <div class="continent-section" id="continent-europe">
+                <h3 class="continent-title">氹仔,路氹及路環</h3>
+                <div class="city-maps">
+                    <div id="map-paris" class="cityMap" data-city="巴黎"></div>
+                    <div id="map-lisbon" class="cityMap" data-city="里斯本"></div>
+                    <div id="map-florence" class="cityMap" data-city="弗罗伦萨"></div>
+                   
+                </div>
+            </div>
+
+            <div class="continent-section" id="continent-oceania">
+                <h3 class="continent-title">澳門其他區域</h3>
+                <div class="city-maps">
+                    <div id="map-sydney" class="cityMap" data-city="悉尼"></div>
+                    <div id="map-wellington" class="cityMap" data-city="惠灵顿"></div>
+                </div>
+            </div>
+
+           <!-- <div class="continent-section" id="continent-northamerica">
+                <h3 class="continent-title">北美洲</h3>
+                <div class="city-maps">
+                    <div id="map-newyork" class="cityMap" data-city="纽约"></div>
+                    <div id="map-losangeles" class="cityMap" data-city="洛杉矶"></div>
+                    <div id="map-seattle" class="cityMap" data-city="西雅图"></div>
+                    <div id="map-ottawa" class="cityMap" data-city="渥太华"></div>
+                    <div id="map-mexicocity" class="cityMap" data-city="墨西哥城"></div>
+                    <div id="map-toronto" class="cityMap" data-city="多伦多"></div>
+                    <div id="map-chicago" class="cityMap" data-city="芝加哥"></div>
+                    <div id="map-houston" class="cityMap" data-city="休斯顿"></div>
+                </div>
+            </div>
+
+            <div class="continent-section" id="continent-southamerica">
+                <h3 class="continent-title">南美洲</h3>
+                <div class="city-maps">
+                    <div id="map-buenosaires" class="cityMap" data-city="布宜诺斯艾利斯"></div>
+                    <div id="map-brasilia" class="cityMap" data-city="巴西利亚"></div>
+                    <div id="map-sao_paulo" class="cityMap" data-city="圣保罗"></div>
+                    <div id="map-santiago" class="cityMap" data-city="圣地亚哥"></div>
+                    <div id="map-lima" class="cityMap" data-city="利马"></div>
+                    <div id="map-bogota" class="cityMap" data-city="波哥大"></div>
+                </div>
+            </div> -->
+            <!-- 热带/热带性气旋显示区域（专业术语与更新时间） --> 
+           <!-- <div id="cycloneInfo" style="margin-top:28px;padding:16px 12px;background:rgba(255,255,255,0.85);border-radius:12px;box-shadow:0 2px 8px rgba(44,62,80,0.08);font-size:16px;color:#2c3e50;">
+                <h3 style="margin:0 0 8px 0;"><span class="lang-zh">太平洋热带气旋活动（实时摘要）</span><span class="lang-en" style="display:none">Pacific Tropical Cyclone Activity (Live Summary)</span>
+                    <small id="cycloneUpdated" style="font-size:12px;color:#888;margin-left:8px;">--</small>
+                </h3>
+                <div id="cycloneList">正在获取气旋信息...</div>
+            </div>-->
+            <!-- 全球洪涝/水灾信息显示区域（专业化） -->
+            <!--<div id="floodInfo" style="margin-top:18px;padding:16px 12px;background:rgba(255,255,255,0.85);border-radius:12px;box-shadow:0 2px 8px rgba(44,62,80,0.08);font-size:16px;color:#2c3e50;">
+                <h3 style="margin:0 0 8px 0;"><span class="lang-zh">全球洪涝/水灾概况</span><span class="lang-en" style="display:none">Global Flooding Overview</span>
+                    <small id="floodUpdated" style="font-size:12px;color:#888;margin-left:8px;">--</small>
+                </h3>
+                <div id="floodList">正在获取水灾信息...</div>
+            </div>-->
+        </div>
+    </div>
+
+
+
+    <footer id="disasterFooter">
+    <!-- 灾害应对方法（中英文对照卡片） -->
+    <div id="disasterGuides" style="max-width:1400px;margin:18px auto;padding:16px 18px;background:rgba(255,255,255,0.95);border-radius:12px;box-shadow:0 2px 8px rgba(44,62,80,0.08);">
+        <h2>災害應對要點 / Disaster Response Tips</h2>
+        <div class="guides">
+            <div class="guide-card">
+                <h4><span class="lang-zh">地震</span><span class="lang-en" style="display:none">Earthquake</span></h4>
+                <ul>
+                    <li><span class="lang-zh">就地避難：蹲下、掩護、穩住（掉落物防護）</span><span class="lang-en" style="display:none">Drop, Cover and Hold On: protect from falling debris</span></li>
+                    <li><span class="lang-zh">遠離窗戶和高層傢具</span><span class="lang-en" style="display:none">Stay away from windows and tall furniture</span></li>
+                    <li><span class="lang-zh">建築物外需遠離外牆與電線</span><span class="lang-en" style="display:none">Outside: keep clear of exterior walls and power lines</span></li>
+                    <li><span class="lang-zh">備好應急包（水、藥品、手電、口罩）</span><span class="lang-en" style="display:none">Prepare an emergency kit (water, meds, torch, masks)</span></li>
+                </ul>
+            </div>
+
+            <div class="guide-card">
+                <h4><span class="lang-zh">洪水/水浸</span><span class="lang-en" style="display:none">Flood</span></h4>
+                <ul>
+                    <li><span class="lang-zh">迅速轉移到高處，切勿涉水行走</span><span class="lang-en" style="display:none">Move to higher ground quickly; do not walk through floodwater</span></li>
+                    <li><span class="lang-zh">關閉燃氣與電源（若安全可操作）</span><span class="lang-en" style="display:none">Turn off gas and electricity if safe to do so</span></li>
+                    <li><span class="lang-zh">聽從當地政府疏散指引</span><span class="lang-en" style="display:none">Follow local evacuation orders</span></li>
+                    <li><span class="lang-zh">備足飲用水與重要文件防水保護</span><span class="lang-en" style="display:none">Keep drinking water and waterproof important documents</span></li>
+                </ul>
+            </div>
+
+            <div class="guide-card">
+                <h4><span class="lang-zh">颱風/颶風</span><span class="lang-en" style="display:none">Typhoon / Hurricane</span></h4>
+                <ul>
+                    <li><span class="lang-zh">加固門窗，移至房屋內側安全處</span><span class="lang-en" style="display:none">Secure doors/windows and shelter in interior room</span></li>
+                    <li><span class="lang-zh">避開易墜物區域與低窪地帶</span><span class="lang-en" style="display:none">Avoid areas with falling objects and low-lying zones</span></li>
+                    <li><span class="lang-zh">準備充足糧水與應急照明</span><span class="lang-en" style="display:none">Prepare food, water and emergency lighting</span></li>
+                </ul>
+            </div>
+
+            <div class="guide-card">
+                <h4><span class="lang-zh">野火</span><span class="lang-en" style="display:none">Wildfire</span></h4>
+                <ul>
+                    <li><span class="lang-zh">遵守疏散令，盡早撤離</span><span class="lang-en" style="display:none">Evacuate early when ordered</span></li>
+                    <li><span class="lang-zh">用濕布捂住口鼻並避免吸入煙霧</span><span class="lang-en" style="display:none">Cover mouth/nose with wet cloth to avoid smoke inhalation</span></li>
+                    <li><span class="lang-zh">關閉門窗，阻止火星進入室內</span><span class="lang-en" style="display:none">Close windows/doors to prevent embers entering</span></li>
+                </ul>
+            </div>
+
+            <div class="guide-card">
+                <h4><span class="lang-zh">極端高溫/熱浪</span><span class="lang-en" style="display:none">Extreme Heat / Heatwave</span></h4>
+                <ul>
+                    <li><span class="lang-zh">多飲水、避免中午高溫時段外出</span><span class="lang-en" style="display:none">Drink plenty of water; avoid outdoor activity during peak heat</span></li>
+                    <li><span class="lang-zh">為弱勢群體檢查降溫與通風情況</span><span class="lang-en" style="display:none">Check cooling and ventilation for vulnerable people</span></li>
+                    <li><span class="lang-zh">識別中暑症狀並及時就醫</span><span class="lang-en" style="display:none">Recognize heatstroke signs and seek medical care</span></li>
+                </ul>
+            </div>
+
+            <div class="guide-card">
+                <h4><span class="lang-zh">傳染病與疫情</span><span class="lang-en" style="display:none">Infectious Disease / Pandemic</span></h4>
+                <ul>
+                    <li><span class="lang-zh">勤洗手、佩戴口罩，遵循公共衛生指引</span><span class="lang-en" style="display:none">Wash hands, wear masks, follow public health guidance</span></li>
+                    <li><span class="lang-zh">盡量保持社交距離並接種推薦疫苗</span><span class="lang-en" style="display:none">Maintain distancing and get recommended vaccines</span></li>
+                    <li><span class="lang-zh">如有症狀及時隔離並就醫</span><span class="lang-en" style="display:none">Isolate and seek care if symptomatic</span></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+
+
+    </footer>
+
+    <!-- 引入自定义JS -->
+    <script src="script.js"></script>
+</body>
+</html>
