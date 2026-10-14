@@ -84,7 +84,7 @@ Using Macau as a case study, the research addresses the issue of low-lying areas
 |--------|-------|
 | Precision | **91.0%** |
 | Recall | **85.5%** |
-| Mean Average Precision (mAP) | **89.5%** |
+| Mean Average Precision (mAP) | **86.8%** |
 | mAP@50-95 | **0.653** |
 | Box Loss | 0.774 |
 | Class Loss | 0.335 |
