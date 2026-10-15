@@ -18,7 +18,7 @@ English · [繁體中文](README.zh-Hant.md)
 
 After a typhoon, debris collects in low-lying areas where surface runoff converges. This project combines prediction and detection to help cleanup crews find it faster:
 
-1. **Predict.** GIS watershed analysis of Macau's 5 m digital elevation model (DEM) identifies depressions and runoff convergence zones where garbage is likely to accumulate.
+1. **Predict.** GIS watershed analysis of Macau's 5 m digital elevation model (DEM) identifies depressions and runoff convergence zones where garbage is likely to accumulate. This analysis was carried out outside this repository; its results are summarised under [GIS findings](#gis-findings).
 2. **Detect.** A YOLOv12 model, served by a [Roboflow Workflow](#detection-model), recognises garbage in images from CCTV, phones or field cameras, and every detection is geotagged.
 3. **Map.** A web dashboard plots detections as markers and a heatmap, alongside live weather, air quality, typhoon shelters and a disaster simulator.
 
@@ -97,6 +97,7 @@ flowchart LR
 ├── data/
 │   └── gis/
 │       └── cadmapper-macau-mo.zip  # 3D city model of Macau (SketchUp, from CADMapper)
+├── LICENSE                     # GNU AGPL v3.0
 ├── README.md
 └── README.zh-Hant.md           # Traditional Chinese README
 ```
@@ -110,7 +111,7 @@ Live-camera logs are written to `data/detections.csv`, which is git-ignored.
 - Python 3.10 to 3.13 (required by Roboflow's `inference-sdk`)
 - Internet access: detection runs on Roboflow's serverless API
 - A modern browser (Chrome, Edge, Firefox or Safari)
-- A Roboflow API key, for detection (see [Detection API](#2-detection-api))
+- A Roboflow API key from the `disaster-ial0o` workspace, for detection (see [Detection API](#2-detection-api))
 - Optional: a webcam or video stream, and a serial GPS module
 
 ### 1. Web dashboard
@@ -127,7 +128,7 @@ Translations live in `frontend/js/i18n/zh.js` and `frontend/js/i18n/en.js`. To a
 
 ### 2. Detection API
 
-Camera recognition mode sends captured frames to this API, which runs them through the [Roboflow Workflow](#detection-model). Copy your private API key from <https://app.roboflow.com/settings/api> and export it as `ROBOFLOW_API_KEY`. Never commit it; `.env` is git-ignored if you keep it in one.
+Camera recognition mode sends captured frames to this API, which runs them through the [Roboflow Workflow](#detection-model). The workflow belongs to the `disaster-ial0o` Roboflow workspace, so the API key must come from that workspace: ask its owner to invite you, select the workspace, then copy its private API key from <https://app.roboflow.com/settings/api> and export it as `ROBOFLOW_API_KEY`. Never commit it; `.env` is git-ignored if you keep it in one.
 
 ```bash
 cd backend
@@ -238,6 +239,8 @@ From Python, call `run_disaster_workflow(create_client(), image)`. It accepts a 
 
 ## GIS findings
 
+These results come from the project's GIS analysis of Macau's 5 m DEM. The analysis itself (software, DEM data and processing steps) is not part of this repository, so the code here does not reproduce it.
+
 **Terrain curvature.** Concave terrain (curvature < 0) covers about **14.3%** of the Macau Peninsula, mainly around the Inner Harbour, Praia do Manduco and Ilha Verde. During heavy rain, surface runoff, and the debris it carries, converges in these natural depressions first.
 
 **Elevation.** Land below 2 m makes up **29%** of Macau's land area, and some local depressions lie 0.5 m below sea level. Tidal backwater makes flooding in these areas worse.
@@ -281,7 +284,9 @@ Ao Chun Meng · Leong Hou Wang · Sao Cheng Tai · Sam U Hin · Wong Chi Yu
 
 ## License
 
-Licensed under the [GNU Affero General Public License v3.0](https://www.gnu.org/licenses/agpl-3.0.html).
+The code is licensed under the [GNU Affero General Public License v3.0](LICENSE).
+
+`data/gis/cadmapper-macau-mo.zip` is third-party data with its own terms: it contains map data © OpenStreetMap contributors ([ODbL](https://www.openstreetmap.org/copyright)) and public-domain USGS NED and NASA SRTM elevation data. Keep the `LICENSE.txt` inside the zip with the file when you redistribute it.
 
 ## Acknowledgements
 

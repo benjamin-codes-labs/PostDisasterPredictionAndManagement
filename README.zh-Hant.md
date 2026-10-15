@@ -18,7 +18,7 @@
 
 颱風過後，垃圾容易堆積在地表徑流匯聚的低窪地區。本項目結合預測與偵測兩種手段，協助清理隊伍更快找到垃圾：
 
-1. **預測**：以澳門 5 米分辨率數字高程模型（DEM）進行 GIS 流域分析，找出地表凹陷與徑流匯聚帶，即垃圾堆積的高風險區域。
+1. **預測**：以澳門 5 米分辨率數字高程模型（DEM）進行 GIS 流域分析，找出地表凹陷與徑流匯聚帶，即垃圾堆積的高風險區域。此分析在本倉庫以外進行，結果摘要見 [GIS 流域解析結果](#gis-流域解析結果)。
 2. **偵測**：利用經 [Roboflow Workflow](#偵測模型) 提供的 YOLOv12 模型，在閉路電視、手機或現場攝像頭的影像中識別垃圾，並為每次偵測標註地理位置。
 3. **佈點**：在網頁儀表板上以標記及熱力圖顯示垃圾分佈，同時提供實時天氣、空氣品質、避險中心及災害模擬資訊。
 
@@ -94,6 +94,7 @@ flowchart LR
 ├── data/
 │   └── gis/
 │       └── cadmapper-macau-mo.zip  # 澳門 3D 城市模型（SketchUp，來自 CADMapper）
+├── LICENSE                     # GNU AGPL v3.0
 ├── README.md                   # 英文說明
 └── README.zh-Hant.md
 ```
@@ -107,7 +108,7 @@ flowchart LR
 - Python 3.10 至 3.13（Roboflow `inference-sdk` 的要求）
 - 網絡連線：偵測經 Roboflow serverless API 執行
 - 現代瀏覽器（Chrome、Edge、Firefox 或 Safari）
-- Roboflow API 金鑰，用於偵測（見下文）
+- 來自 `disaster-ial0o` 工作區的 Roboflow API 金鑰，用於偵測（見下文）
 - 可選：網絡攝像頭或影像串流，以及串口 GPS 模組
 
 ### 1. 網頁儀表板
@@ -122,7 +123,7 @@ python3 -m http.server 8080 --directory frontend
 
 ### 2. 偵測 API
 
-攝像頭識別模式會將拍攝畫面傳送至此 API，再由 [Roboflow Workflow](#偵測模型) 進行偵測。請在 <https://app.roboflow.com/settings/api> 複製私人 API 金鑰，並設定為環境變數 `ROBOFLOW_API_KEY`。切勿提交金鑰；如存放於 `.env`，該檔案已被 git 忽略。
+攝像頭識別模式會將拍攝畫面傳送至此 API，再由 [Roboflow Workflow](#偵測模型) 進行偵測。Workflow 屬於 Roboflow 工作區 `disaster-ial0o`，因此 API 金鑰必須來自該工作區：請工作區擁有者邀請你加入，選擇該工作區後，在 <https://app.roboflow.com/settings/api> 複製其私人 API 金鑰，並設定為環境變數 `ROBOFLOW_API_KEY`。切勿提交金鑰；如存放於 `.env`，該檔案已被 git 忽略。
 
 ```bash
 cd backend
@@ -233,6 +234,8 @@ ruff check .
 
 ## GIS 流域解析結果
 
+以下結果來自本項目對澳門 5 米 DEM 的 GIS 分析。分析本身（軟件、DEM 數據及處理步驟）並不在本倉庫內，因此此處的程式碼不會重現該分析。
+
 **地形曲率。** 曲率低於 0 的凹形地形約佔澳門半島面積的 **14.3%**，主要分佈於內港、司打口及青洲一帶。暴雨期間，地表徑流及其攜帶的垃圾會優先匯聚於這些天然凹陷地形。
 
 **海拔。** 海拔低於 2 米的土地佔澳門陸域面積的 **29%**，部分局部凹陷處更低於海平面 0.5 米，潮汐頂托作用會令這些地區的積水更為嚴重。
@@ -276,7 +279,9 @@ Ao Chun Meng · Leong Hou Wang · Sao Cheng Tai · Sam U Hin · Wong Chi Yu
 
 ## 授權
 
-本項目採用 [GNU Affero General Public License v3.0](https://www.gnu.org/licenses/agpl-3.0.html) 授權。
+本項目程式碼採用 [GNU Affero General Public License v3.0](LICENSE) 授權。
+
+`data/gis/cadmapper-macau-mo.zip` 為第三方數據，另有授權條款：其地圖數據 © OpenStreetMap 貢獻者（[ODbL](https://www.openstreetmap.org/copyright)），高程數據來自屬公有領域的 USGS NED 及 NASA SRTM。轉發該檔案時，請保留壓縮檔內的 `LICENSE.txt`。
 
 ## 致謝
 
