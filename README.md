@@ -156,7 +156,7 @@ export ROBOFLOW_API_KEY=...
 python -m garbage_detection.live --source 0 --gps-port COM3
 ```
 
-The preview window shows the live feed. Every `--log-interval` seconds one frame is sent to the Roboflow Workflow, and its boxes are drawn on the preview until the next sample. Each sample is one serverless call, so a longer interval costs fewer credits. If a call fails, the frame is skipped and the camera keeps running.
+The preview window shows the live feed. Every `--log-interval` seconds one frame is sent to the Roboflow Workflow from a background thread, so the preview never waits for it, and the boxes from the latest answer are drawn on the preview until the next one arrives. Only one call runs at a time: if the workflow takes longer than the interval, the next frame is sampled as soon as it answers. Each sample is one serverless call, so a longer interval costs fewer credits. If a call fails, the frame is skipped and the camera keeps running.
 
 | Option | Default | Description |
 | --- | --- | --- |
@@ -235,7 +235,7 @@ Its single output, `predictions`, holds object detections. `backend/garbage_dete
 
 Its Roboflow dataset groups the garbage into fewer classes than the research taxonomy above, so the deployed model detects **11 classes**: `Can`, `Cardboard`, `Carton`, `Cloth`, `Drink container`, `Fallen tree`, `Food leftover`, `Food packaging`, `Glass bottle`, `Pile of Leaves` and `Useless bag`. The dashboard maps each to a category and an English/Chinese label in `frontend/js/data/garbage-types.js`.
 
-From Python, call `run_disaster_workflow(create_client(), image)`. It accepts a BGR `numpy` image, a file path or an https URL. Each call has a 30 s timeout and up to 2 retries with exponential backoff for timeouts, connection errors and HTTP 429/5xx. Failures raise `WorkflowError` subclasses: `WorkflowConfigError` (no API key), `WorkflowRequestError` / `WorkflowTimeoutError`, and `WorkflowResponseError` (unexpected payload).
+From Python, call `run_disaster_workflow(create_client(), image)`. It accepts a BGR `numpy` image, a file path or an https URL. Each call has a 10 s timeout and up to 2 retries with exponential backoff for timeouts, connection errors and HTTP 429/5xx. Failures raise `WorkflowError` subclasses: `WorkflowConfigError` (no API key), `WorkflowRequestError` / `WorkflowTimeoutError`, and `WorkflowResponseError` (unexpected payload).
 
 ## GIS findings
 

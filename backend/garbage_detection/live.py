@@ -1,7 +1,8 @@
 """Garbage detection on a live camera, logging geotagged counts to CSV.
 
 One frame every ``--log-interval`` seconds is sent to the Roboflow Workflow (``ROBOFLOW_API_KEY``
-must be set); the preview shows the latest boxes on top of the live feed.
+must be set) from a background thread, so the preview keeps running while the workflow answers. The
+preview shows the latest boxes on top of the live feed.
 
 Example (run from the ``backend`` directory)::
 
@@ -15,6 +16,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import logging
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -84,8 +86,43 @@ def draw_detections(frame: np.ndarray, result: DetectionResult) -> None:
         cv2.putText(frame, label, (top_left[0], top_left[1] - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.5, BOX_COLOR, 1)
 
 
+class BackgroundDetection:
+    """Runs one detection at a time in a daemon thread, so the preview never waits for the workflow."""
+
+    def __init__(self, detector: GarbageDetector) -> None:
+        self._detector = detector
+        self._thread: threading.Thread | None = None
+        self._outcome: DetectionResult | WorkflowError | None = None
+
+    @property
+    def busy(self) -> bool:
+        return self._thread is not None
+
+    def start(self, frame: np.ndarray) -> None:
+        """Start detecting ``frame``, which must not be modified afterwards."""
+        if self.busy:
+            raise RuntimeError("A detection is already running")
+
+        def detect() -> None:
+            try:
+                self._outcome = self._detector.detect(frame)
+            except WorkflowError as error:
+                self._outcome = error
+
+        self._thread = threading.Thread(target=detect, daemon=True)
+        self._thread.start()
+
+    def poll(self) -> DetectionResult | WorkflowError | None:
+        """The finished detection's result or error, or ``None`` while it is still running or idle."""
+        if self._thread is None or self._thread.is_alive():
+            return None
+        self._thread = None
+        outcome, self._outcome = self._outcome, None
+        return outcome
+
+
 def run(args: argparse.Namespace) -> None:
-    detector = GarbageDetector(confidence=args.confidence)
+    detection = BackgroundDetection(GarbageDetector(confidence=args.confidence))
     log = DetectionLog(args.output)
     capture = open_capture(args.source)
     last_sampled_at = float("-inf")
@@ -101,13 +138,16 @@ def run(args: argparse.Namespace) -> None:
                     break
 
                 now = time.monotonic()
-                if now - last_sampled_at >= args.log_interval:
+                if not detection.busy and now - last_sampled_at >= args.log_interval:
                     last_sampled_at = now
-                    try:
-                        latest = detector.detect(frame)
-                    except WorkflowError as error:
-                        logger.warning("Frame skipped: %s", error)
-                        latest = DetectionResult(predictions=())
+                    detection.start(frame.copy())
+
+                outcome = detection.poll()
+                if isinstance(outcome, WorkflowError):
+                    logger.warning("Frame skipped: %s", outcome)
+                    latest = DetectionResult(predictions=())
+                elif outcome is not None:
+                    latest = outcome
                     counts = count_by_class(latest)
                     location = locator.locate() if counts else None
                     if counts and location is None:

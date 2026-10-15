@@ -151,7 +151,7 @@ export ROBOFLOW_API_KEY=...
 python -m garbage_detection.live --source 0 --gps-port COM3
 ```
 
-預覽視窗顯示即時畫面。每隔 `--log-interval` 秒會將一幀傳送至 Roboflow Workflow，其偵測框會繪製於預覽上，直至下一次取樣。每次取樣即一次 serverless 呼叫，間隔越長，消耗的額度越少。呼叫失敗時會略過該幀，攝像頭繼續運行。
+預覽視窗顯示即時畫面。每隔 `--log-interval` 秒會由背景執行緒將一幀傳送至 Roboflow Workflow，因此預覽毋須等待；最新回應的偵測框會繪製於預覽上，直至下一次回應。同一時間只會進行一次呼叫：若 Workflow 回應時間長於間隔，則在回應後立即取樣下一幀。每次取樣即一次 serverless 呼叫，間隔越長，消耗的額度越少。呼叫失敗時會略過該幀，攝像頭繼續運行。
 
 | 參數 | 預設值 | 說明 |
 | --- | --- | --- |
@@ -230,7 +230,7 @@ ruff check .
 
 其 Roboflow 數據集將垃圾歸納為比上述研究分類更少的類別，因此部署的模型可識別 **11 類**：`Can`、`Cardboard`、`Carton`、`Cloth`、`Drink container`、`Fallen tree`、`Food leftover`、`Food packaging`、`Glass bottle`、`Pile of Leaves` 及 `Useless bag`。儀表板在 `frontend/js/data/garbage-types.js` 中為每類指定分類及中英文標籤。
 
-在 Python 中呼叫 `run_disaster_workflow(create_client(), image)`，可傳入 BGR `numpy` 圖片、檔案路徑或 https 網址。每次呼叫設有 30 秒逾時，並會對逾時、連線錯誤及 HTTP 429/5xx 以指數退避最多重試 2 次。失敗時拋出 `WorkflowError` 子類別：`WorkflowConfigError`（缺少 API 金鑰）、`WorkflowRequestError`／`WorkflowTimeoutError`，以及 `WorkflowResponseError`（回應格式不符）。
+在 Python 中呼叫 `run_disaster_workflow(create_client(), image)`，可傳入 BGR `numpy` 圖片、檔案路徑或 https 網址。每次呼叫設有 10 秒逾時，並會對逾時、連線錯誤及 HTTP 429/5xx 以指數退避最多重試 2 次。失敗時拋出 `WorkflowError` 子類別：`WorkflowConfigError`（缺少 API 金鑰）、`WorkflowRequestError`／`WorkflowTimeoutError`，以及 `WorkflowResponseError`（回應格式不符）。
 
 ## GIS 流域解析結果
 
