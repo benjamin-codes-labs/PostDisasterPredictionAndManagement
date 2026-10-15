@@ -1,0 +1,20 @@
+[
+  {
+    "predictions": {
+      "image": {"width": 640, "height": 640},
+      "predictions": [
+        {
+          "width": 30,
+          "height": 42,
+          "x": 323,
+          "y": 406,
+          "confidence": 0.7782317399978638,
+          "class_id": 5,
+          "class": "Drink container",
+          "detection_id": "c5cc7c22-6a2e-4aa5-9d48-23874c9613d2",
+          "parent_id": "image"
+        }
+      ]
+    }
+  }
+]

@@ -1,4 +1,8 @@
-"""Real-time garbage detection from a camera, logging geotagged counts to CSV.
+"""Garbage detection on a live camera, logging geotagged counts to CSV.
+
+One frame every ``--log-interval`` seconds is sent to the Roboflow Workflow (``ROBOFLOW_API_KEY``
+must be set) from a background thread, so the preview keeps running while the workflow answers. The
+preview shows the latest boxes on top of the live feed.
 
 Example (run from the ``backend`` directory)::
 
@@ -12,14 +16,16 @@ from __future__ import annotations
 import argparse
 import contextlib
 import logging
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
 
 import cv2
+import numpy as np
 
-from .config import DEFAULT_CONFIDENCE, DEFAULT_DETECTIONS_CSV, DEFAULT_WEIGHTS
-from .detector import GarbageDetector, count_by_class
+from .config import DEFAULT_CONFIDENCE, DEFAULT_DETECTIONS_CSV
+from .detector import DetectionResult, GarbageDetector, WorkflowError, count_by_class
 from .geo import open_locator
 from .records import DetectionLog
 
@@ -27,13 +33,11 @@ logger = logging.getLogger(__name__)
 
 WINDOW_TITLE = "Garbage detection (press q to quit)"
 QUIT_KEY = ord("q")
+BOX_COLOR = (0, 0, 255)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Real-time garbage detection with geotagged CSV logging.")
-    parser.add_argument(
-        "--weights", type=Path, default=DEFAULT_WEIGHTS, help="YOLO weights file (default: %(default)s)"
-    )
+    parser = argparse.ArgumentParser(description="Live-camera garbage detection with geotagged CSV logging.")
     parser.add_argument(
         "--source",
         default="0",
@@ -60,7 +64,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--log-interval",
         type=float,
         default=1.0,
-        help="minimum seconds between logged frames (default: %(default)s)",
+        help="seconds between frames sent to the workflow and logged (default: %(default)s)",
     )
     return parser.parse_args(argv)
 
@@ -72,12 +76,58 @@ def open_capture(source: str) -> cv2.VideoCapture:
     return capture
 
 
+def draw_detections(frame: np.ndarray, result: DetectionResult) -> None:
+    for prediction in result.predictions:
+        half_width, half_height = prediction.width / 2, prediction.height / 2
+        top_left = (round(prediction.x - half_width), round(prediction.y - half_height))
+        bottom_right = (round(prediction.x + half_width), round(prediction.y + half_height))
+        cv2.rectangle(frame, top_left, bottom_right, BOX_COLOR, 2)
+        label = f"{prediction.class_name} {prediction.confidence:.2f}"
+        cv2.putText(frame, label, (top_left[0], top_left[1] - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.5, BOX_COLOR, 1)
+
+
+class BackgroundDetection:
+    """Runs one detection at a time in a daemon thread, so the preview never waits for the workflow."""
+
+    def __init__(self, detector: GarbageDetector) -> None:
+        self._detector = detector
+        self._thread: threading.Thread | None = None
+        self._outcome: DetectionResult | WorkflowError | None = None
+
+    @property
+    def busy(self) -> bool:
+        return self._thread is not None
+
+    def start(self, frame: np.ndarray) -> None:
+        """Start detecting ``frame``, which must not be modified afterwards."""
+        if self.busy:
+            raise RuntimeError("A detection is already running")
+
+        def detect() -> None:
+            try:
+                self._outcome = self._detector.detect(frame)
+            except WorkflowError as error:
+                self._outcome = error
+
+        self._thread = threading.Thread(target=detect, daemon=True)
+        self._thread.start()
+
+    def poll(self) -> DetectionResult | WorkflowError | None:
+        """The finished detection's result or error, or ``None`` while it is still running or idle."""
+        if self._thread is None or self._thread.is_alive():
+            return None
+        self._thread = None
+        outcome, self._outcome = self._outcome, None
+        return outcome
+
+
 def run(args: argparse.Namespace) -> None:
-    detector = GarbageDetector(args.weights, args.confidence)
+    detection = BackgroundDetection(GarbageDetector(confidence=args.confidence))
     log = DetectionLog(args.output)
     capture = open_capture(args.source)
-    last_logged_at = float("-inf")
-    logger.info("Detecting %s; logging to %s", ", ".join(detector.class_names), log.path)
+    last_sampled_at = float("-inf")
+    latest = DetectionResult(predictions=())
+    logger.info("Sampling a frame every %g s; logging to %s", args.log_interval, log.path)
 
     with contextlib.closing(open_locator(args.gps_port, args.baud_rate)) as locator:
         try:
@@ -87,21 +137,29 @@ def run(args: argparse.Namespace) -> None:
                     logger.info("Video source ended")
                     break
 
-                result = detector.detect(frame)
-                counts = count_by_class(result)
                 now = time.monotonic()
-                if counts and now - last_logged_at >= args.log_interval:
-                    location = locator.locate()
-                    if location is None:
+                if not detection.busy and now - last_sampled_at >= args.log_interval:
+                    last_sampled_at = now
+                    detection.start(frame.copy())
+
+                outcome = detection.poll()
+                if isinstance(outcome, WorkflowError):
+                    logger.warning("Frame skipped: %s", outcome)
+                    latest = DetectionResult(predictions=())
+                elif outcome is not None:
+                    latest = outcome
+                    counts = count_by_class(latest)
+                    location = locator.locate() if counts else None
+                    if counts and location is None:
                         logger.warning("No position fix; detection not logged")
-                    else:
+                    elif counts:
                         log.append(counts, location, datetime.now().astimezone())
-                        last_logged_at = now
                         logger.info(
                             "Logged %s at (%.6f, %.6f)", dict(counts), location.latitude, location.longitude
                         )
 
-                cv2.imshow(WINDOW_TITLE, result.plot())
+                draw_detections(frame, latest)
+                cv2.imshow(WINDOW_TITLE, frame)
                 if cv2.waitKey(1) & 0xFF == QUIT_KEY:
                     break
         finally:

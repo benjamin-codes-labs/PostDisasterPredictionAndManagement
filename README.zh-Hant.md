@@ -2,12 +2,12 @@
 
 # 颱風災後地表垃圾智慧辨識系統
 
-**融合 GIS 流域解析與 YOLO 深度學習模型的颱風災後地表垃圾辨識方案 —— 以澳門為例**
+**融合 GIS 流域解析與 Roboflow 上 YOLOv12 深度學習模型的颱風災後地表垃圾辨識方案 —— 以澳門為例**
 
 [English](README.md) · 繁體中文
 
-![Python](https://img.shields.io/badge/Python-3.9%2B-3776AB?logo=python&logoColor=white)
-![Ultralytics YOLO](https://img.shields.io/badge/Ultralytics-YOLO-111F68)
+![Python](https://img.shields.io/badge/Python-3.10--3.13-3776AB?logo=python&logoColor=white)
+![Roboflow Workflows](https://img.shields.io/badge/Roboflow-Workflows-6706CE)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
 ![Leaflet](https://img.shields.io/badge/Leaflet-1.9-199900?logo=leaflet&logoColor=white)
 ![License](https://img.shields.io/badge/License-AGPL--3.0-blue)
@@ -18,8 +18,8 @@
 
 颱風過後，垃圾容易堆積在地表徑流匯聚的低窪地區。本項目結合預測與偵測兩種手段，協助清理隊伍更快找到垃圾：
 
-1. **預測**：以澳門 5 米分辨率數字高程模型（DEM）進行 GIS 流域分析，找出地表凹陷與徑流匯聚帶，即垃圾堆積的高風險區域。
-2. **偵測**：利用 YOLO 模型在閉路電視、手機或現場攝像頭的影像中識別垃圾，並為每次偵測標註地理位置。
+1. **預測**：以澳門 5 米分辨率數字高程模型（DEM）進行 GIS 流域分析，找出地表凹陷與徑流匯聚帶，即垃圾堆積的高風險區域。此分析在本倉庫以外進行，結果摘要見 [GIS 流域解析結果](#gis-流域解析結果)。
+2. **偵測**：利用經 [Roboflow Workflow](#偵測模型) 提供的 YOLOv12 模型，在閉路電視、手機或現場攝像頭的影像中識別垃圾，並為每次偵測標註地理位置。
 3. **佈點**：在網頁儀表板上以標記及熱力圖顯示垃圾分佈，同時提供實時天氣、空氣品質、避險中心及災害模擬資訊。
 
 三者構成「災前預測－災中監控－災後評估」的全鏈條管理方案。
@@ -28,7 +28,7 @@
 
 | 範疇 | 功能 |
 | --- | --- |
-| **垃圾識別** | 在瀏覽器拍攝畫面並經後端 API 識別垃圾；或對攝像頭／影像串流進行連續偵測，並將附有 GPS 位置的結果記錄至 CSV |
+| **垃圾識別** | 在瀏覽器拍攝畫面並經後端 API 識別垃圾；或每隔數秒從攝像頭／影像串流取樣一幀進行偵測，並將附有 GPS 位置的結果記錄至 CSV。偵測於 Roboflow Workflow 上執行，本地無需模型權重 |
 | **垃圾分佈地圖** | 基於 Leaflet 的地圖，支援按類別篩選、加權熱力圖、點擊地圖報告垃圾及 CSV 匯入匯出 |
 | **區域預覽** | 各堂區及區域的小地圖；點擊即可將主地圖移至該區 |
 | **天氣與空氣品質** | 當前天氣、未來七日及逐小時預報（Open-Meteo）；每 15 分鐘自動刷新的實時空氣品質指數（WAQI） |
@@ -45,18 +45,20 @@ flowchart LR
         GPS["GPS 模組"]
     end
     subgraph backend["後端（Python）"]
-        LIVE["live.py<br/>即時偵測"]
+        LIVE["live.py<br/>攝像頭偵測"]
         API["server.py<br/>FastAPI"]
-        MODEL[("YOLO 權重")]
+        CLIENT["detector.py<br/>Workflow 客戶端"]
     end
+    RF[("Roboflow Workflow<br/>Disaster new v2 Logic")]
     subgraph frontend["前端（瀏覽器）"]
         UI["網頁儀表板"]
     end
 
     CAM --> LIVE
     GPS --> LIVE
-    LIVE --> MODEL
-    API --> MODEL
+    LIVE --> CLIENT
+    API --> CLIENT
+    CLIENT -- "HTTPS" --> RF
     LIVE -- "detections.csv" --> UI
     UI -- "POST /detect-garbage" --> API
     UI --> EXT["Open-Meteo · WAQI · OpenStreetMap"]
@@ -68,13 +70,14 @@ flowchart LR
 .
 ├── backend/
 │   ├── garbage_detection/
-│   │   ├── config.py           # 路徑與預設值
-│   │   ├── detector.py         # YOLO 封裝及按類別計數
+│   │   ├── config.py           # 路徑、Roboflow Workflow 設定與預設值
+│   │   ├── detector.py         # Roboflow Workflow 客戶端及按類別計數
 │   │   ├── geo.py              # 串口 GPS 及模擬定位
 │   │   ├── records.py          # CSV 偵測記錄
-│   │   ├── live.py             # 命令列工具：即時攝像頭偵測
+│   │   ├── live.py             # 命令列工具：取樣幀的攝像頭偵測
 │   │   └── server.py           # 供儀表板使用的 HTTP API
-│   ├── tests/
+│   ├── tests/                  # 單元測試及 Workflow 線上冒煙測試
+│   │   └── fixtures/           # 供單元測試重播的已錄製 Workflow 回應
 │   ├── pyproject.toml          # Ruff 與 pytest 設定
 │   ├── requirements.txt
 │   └── requirements-dev.txt
@@ -88,20 +91,24 @@ flowchart LR
 │       ├── data/               # 垃圾分類、區域、避險中心、天氣代碼
 │       ├── features/           # 每個儀表板功能一個模組
 │       └── utils/              # DOM、CSV 及隨機數工具
-├── models/
-│   ├── best.pt                 # 最佳權重（預設）
-│   └── last.pt                 # 最後一輪權重
-└── data/
-    └── gis/
-        └── cadmapper-macau-mo.zip  # 澳門 3D 城市模型（SketchUp，來自 CADMapper）
+├── data/
+│   └── gis/
+│       └── cadmapper-macau-mo.zip  # 澳門 3D 城市模型（SketchUp，來自 CADMapper）
+├── LICENSE                     # GNU AGPL v3.0
+├── README.md                   # 英文說明
+└── README.zh-Hant.md
 ```
+
+攝像頭偵測記錄會寫入 `data/detections.csv`，該檔案已被 git 忽略。
 
 ## 快速開始
 
 ### 環境要求
 
-- Python 3.9 或以上
+- Python 3.10 至 3.13（Roboflow `inference-sdk` 的要求）
+- 網絡連線：偵測經 Roboflow serverless API 執行
 - 現代瀏覽器（Chrome、Edge、Firefox 或 Safari）
+- 來自 `disaster-ial0o` 工作區的 Roboflow API 金鑰，用於偵測（見下文）
 - 可選：網絡攝像頭或影像串流，以及串口 GPS 模組
 
 ### 1. 網頁儀表板
@@ -116,39 +123,44 @@ python3 -m http.server 8080 --directory frontend
 
 ### 2. 偵測 API
 
-攝像頭識別模式會將拍攝畫面傳送至此 API。
+攝像頭識別模式會將拍攝畫面傳送至此 API，再由 [Roboflow Workflow](#偵測模型) 進行偵測。Workflow 屬於 Roboflow 工作區 `disaster-ial0o`，因此 API 金鑰必須來自該工作區：請工作區擁有者邀請你加入，選擇該工作區後，在 <https://app.roboflow.com/settings/api> 複製其私人 API 金鑰，並設定為環境變數 `ROBOFLOW_API_KEY`。切勿提交金鑰；如存放於 `.env`，該檔案已被 git 忽略。
 
 ```bash
 cd backend
 python3 -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate            # Windows：.venv\Scripts\activate
 pip install -r requirements.txt
+export ROBOFLOW_API_KEY=...          # cmd：set ROBOFLOW_API_KEY=...  PowerShell：$env:ROBOFLOW_API_KEY="..."
 uvicorn garbage_detection.server:app --port 8000
 ```
 
+未設定 `ROBOFLOW_API_KEY` 時伺服器將無法啟動。每次偵測即一次 Roboflow serverless 呼叫，會消耗帳戶額度。
+
 | 端點 | 說明 |
 | --- | --- |
-| `GET /health` | 服務狀態及模型類別名稱 |
-| `POST /detect-garbage` | 以 multipart 上傳圖片（欄位 `file`），返回 `{"detections": [{"type": "Plastic", "count": 2}]}` |
+| `GET /health` | 服務狀態及所使用的 Roboflow Workflow |
+| `POST /detect-garbage` | 以 multipart 上傳圖片（欄位 `file`），返回 `{"detections": [{"type": "Drink container", "count": 2}]}`；無法連接 Workflow 時返回 `502` |
 
 儀表板預設呼叫 `http://localhost:8000`（見 `frontend/js/config.js`）。CORS 預設允許 `http://localhost:8080` 及 `http://127.0.0.1:8080`，可透過以逗號分隔的環境變數 `CORS_ALLOW_ORIGINS` 修改。
 
-### 3. 即時攝像頭偵測
+### 3. 攝像頭偵測
 
 ```bash
 cd backend
+export ROBOFLOW_API_KEY=...
 python -m garbage_detection.live --source 0 --gps-port COM3
 ```
+
+預覽視窗顯示即時畫面。每隔 `--log-interval` 秒會由背景執行緒將一幀傳送至 Roboflow Workflow，因此預覽毋須等待；最新回應的偵測框會繪製於預覽上，直至下一次回應。同一時間只會進行一次呼叫：若 Workflow 回應時間長於間隔，則在回應後立即取樣下一幀。每次取樣即一次 serverless 呼叫，間隔越長，消耗的額度越少。呼叫失敗時會略過該幀，攝像頭繼續運行。
 
 | 參數 | 預設值 | 說明 |
 | --- | --- | --- |
 | `--source` | `0` | 攝像頭編號或串流網址，例如 ESP32-CAM 的 `http://192.168.50.10:81/stream` |
 | `--gps-port` | 無 | 輸出 `經度,緯度` 格式的 GPS 模組串口；未提供或無法連接時，會在澳門範圍內模擬位置 |
 | `--baud-rate` | `115200` | GPS 波特率 |
-| `--weights` | `models/best.pt` | YOLO 權重；亦可透過 `GARBAGE_MODEL_PATH` 設定 |
 | `--output` | `data/detections.csv` | 追加寫入的 CSV 記錄檔 |
-| `--confidence` | `0.25` | 最低偵測置信度 |
-| `--log-interval` | `1.0` | 兩次記錄之間的最短秒數 |
+| `--confidence` | `0.25` | 捨棄低於此置信度的偵測（在 Workflow 自身的閾值之後套用） |
+| `--log-interval` | `1.0` | 傳送至 Workflow 並記錄的取樣間隔秒數 |
 
 在預覽視窗按 <kbd>q</kbd> 停止，然後在儀表板以 **匯入垃圾資料（CSV）** 載入記錄。
 
@@ -158,10 +170,10 @@ python -m garbage_detection.live --source 0 --gps-port COM3
 
 ```csv
 id,type,latitude,longitude,count,timestamp
-3f2b9c41d0e84b6f9a7c2e5d18a0b6c3,Plastic,22.198700,113.543900,2,2025-09-24T10:30:00+08:00
+3f2b9c41d0e84b6f9a7c2e5d18a0b6c3,Drink container,22.198700,113.543900,2,2025-09-24T10:30:00+08:00
 ```
 
-`type` 為模型類別（`Glass`、`Metal`、`Plastic`、`Trash`）或手動報告類型（`Kitchen`、`Hazardous`、`Large`）。其他值會歸入「其他垃圾」，因此更換為不同類別的權重亦無需修改程式碼。
+`type` 為模型類別（見[偵測模型](#偵測模型)）或手動報告類型（`Kitchen`、`Hazardous`、`Large`）。其他值（例如舊模型的類別）會歸入「其他垃圾」，因此更換為不同類別的 Workflow 亦無需修改程式碼。
 
 ### 測試與程式碼檢查
 
@@ -171,6 +183,8 @@ pip install -r requirements-dev.txt
 pytest
 ruff check .
 ```
+
+單元測試會重播一份已錄製的 Workflow 回應，無需網絡。`tests/test_workflow_smoke.py` 會以一張樣本圖片呼叫線上 Workflow 並檢查輸出欄位；只有設定了 `ROBOFLOW_API_KEY` 才會執行，否則略過。
 
 ## 模型
 
@@ -202,12 +216,25 @@ ruff check .
 
 </details>
 
-### 隨附權重
+### 偵測模型
 
-> [!NOTE]
-> `models/` 內的權重**並非**上述 14 類研究模型，而是一個以海洋塑膠數據集、640 px 解像度訓練的 4 類 YOLO11n 模型（`Glass`、`Metal`、`Plastic`、`Trash`）。訓練於第 170 輪提前停止；`best.pt`（第 70 輪）在其驗證集上的 mAP@50 為 0.556，mAP@50-95 為 0.354。如需使用其他權重，可傳入 `--weights` 或設定 `GARBAGE_MODEL_PATH`。
+偵測經 Roboflow serverless API 執行 Roboflow Workflow **Disaster new v2 Logic**（`disaster-ial0o/disaster-new-v2-logic`），本倉庫不再存放任何權重。Workflow 只有一個輸入 `image`，沒有其他參數。它包裝了 `disaster-new` Workflow，後者運行 YOLOv12n 模型 `disaster-new/2`（精確度 89.5%、召回率 82.8%、mAP@50 86.8%，與上述研究結果相同）。
+
+其唯一輸出 `predictions` 為物件偵測結果。`backend/garbage_detection/detector.py` 只讀取每個偵測框的 `class`、`confidence`、`x`、`y`（框中心）、`width` 及 `height`：
+
+```json
+[{"predictions": {"image": {"width": 640, "height": 640},
+                  "predictions": [{"class": "Drink container", "confidence": 0.78,
+                                   "x": 323, "y": 406, "width": 30, "height": 42, "...": "..."}]}}]
+```
+
+其 Roboflow 數據集將垃圾歸納為比上述研究分類更少的類別，因此部署的模型可識別 **11 類**：`Can`、`Cardboard`、`Carton`、`Cloth`、`Drink container`、`Fallen tree`、`Food leftover`、`Food packaging`、`Glass bottle`、`Pile of Leaves` 及 `Useless bag`。儀表板在 `frontend/js/data/garbage-types.js` 中為每類指定分類及中英文標籤。
+
+在 Python 中呼叫 `run_disaster_workflow(create_client(), image)`，可傳入 BGR `numpy` 圖片、檔案路徑或 https 網址。每次呼叫設有 10 秒逾時，並會對逾時、連線錯誤及 HTTP 429/5xx 以指數退避最多重試 2 次。失敗時拋出 `WorkflowError` 子類別：`WorkflowConfigError`（缺少 API 金鑰）、`WorkflowRequestError`／`WorkflowTimeoutError`，以及 `WorkflowResponseError`（回應格式不符）。
 
 ## GIS 流域解析結果
+
+以下結果來自本項目對澳門 5 米 DEM 的 GIS 分析。分析本身（軟件、DEM 數據及處理步驟）並不在本倉庫內，因此此處的程式碼不會重現該分析。
 
 **地形曲率。** 曲率低於 0 的凹形地形約佔澳門半島面積的 **14.3%**，主要分佈於內港、司打口及青洲一帶。暴雨期間，地表徑流及其攜帶的垃圾會優先匯聚於這些天然凹陷地形。
 
@@ -252,7 +279,9 @@ Ao Chun Meng · Leong Hou Wang · Sao Cheng Tai · Sam U Hin · Wong Chi Yu
 
 ## 授權
 
-本項目採用 [GNU Affero General Public License v3.0](https://www.gnu.org/licenses/agpl-3.0.html) 授權，與 Ultralytics YOLO 相同。
+本項目程式碼採用 [GNU Affero General Public License v3.0](LICENSE) 授權。
+
+`data/gis/cadmapper-macau-mo.zip` 為第三方數據，另有授權條款：其地圖數據 © OpenStreetMap 貢獻者（[ODbL](https://www.openstreetmap.org/copyright)），高程數據來自屬公有領域的 USGS NED 及 NASA SRTM。轉發該檔案時，請保留壓縮檔內的 `LICENSE.txt`。
 
 ## 致謝
 
