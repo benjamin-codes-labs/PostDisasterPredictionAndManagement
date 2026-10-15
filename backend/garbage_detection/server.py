@@ -1,6 +1,7 @@
 """HTTP API used by the web dashboard's camera recognition mode.
 
-Run from the ``backend`` directory::
+Detection runs on the Roboflow Workflow, so ``ROBOFLOW_API_KEY`` must be set. Run from the
+``backend`` directory::
 
     uvicorn garbage_detection.server:app --port 8000
 """
@@ -18,8 +19,8 @@ from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from .config import DEFAULT_WEIGHTS
-from .detector import GarbageDetector, count_by_class
+from .config import ROBOFLOW_WORKFLOW_ID, ROBOFLOW_WORKSPACE
+from .detector import GarbageDetector, WorkflowError, count_by_class
 
 DEFAULT_CORS_ORIGINS = "http://localhost:8080,http://127.0.0.1:8080"
 
@@ -35,12 +36,12 @@ class DetectionResponse(BaseModel):
 
 class HealthResponse(BaseModel):
     status: str
-    classes: list[str]
+    workflow: str
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    app.state.detector = GarbageDetector(DEFAULT_WEIGHTS)
+    app.state.detector = GarbageDetector()
     yield
 
 
@@ -64,8 +65,8 @@ def decode_image(data: bytes) -> np.ndarray | None:
 
 
 @app.get("/health")
-def health(request: Request) -> HealthResponse:
-    return HealthResponse(status="ok", classes=get_detector(request).class_names)
+def health() -> HealthResponse:
+    return HealthResponse(status="ok", workflow=f"{ROBOFLOW_WORKSPACE}/{ROBOFLOW_WORKFLOW_ID}")
 
 
 @app.post("/detect-garbage")
@@ -74,7 +75,10 @@ def detect_garbage(request: Request, file: Annotated[UploadFile, File()]) -> Det
     if image is None:
         raise HTTPException(status_code=400, detail="Uploaded file is not a valid image")
 
-    counts = count_by_class(get_detector(request).detect(image))
+    try:
+        counts = count_by_class(get_detector(request).detect(image))
+    except WorkflowError as error:
+        raise HTTPException(status_code=502, detail=f"Detection failed: {error}") from error
     return DetectionResponse(
         detections=[Detection(type=name, count=count) for name, count in counts.most_common()]
     )

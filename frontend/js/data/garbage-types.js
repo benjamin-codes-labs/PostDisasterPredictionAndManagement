@@ -1,9 +1,8 @@
 /**
  * Garbage taxonomy shared by the map, camera recognition and CSV import/export.
  *
- * Type ids match the class names emitted by the detection model (`models/best.pt`
- * detects Glass, Metal, Plastic and Trash); Kitchen, Hazardous and Large exist for
- * manual reports. Labels live in the i18n dictionaries under `garbageTypes.*` and
+ * Type ids match the class names emitted by the Roboflow Workflow "Disaster new v2 Logic"
+ * (model `disaster-new/2`); Kitchen, Hazardous and Large exist for manual reports. Labels live in the i18n dictionaries under `garbageTypes.*` and
  * `categories.*`.
  */
 import { t } from '../i18n/index.js';
@@ -18,10 +17,17 @@ export const CATEGORIES = Object.freeze({
 
 /** Garbage type id -> category id. */
 export const GARBAGE_TYPES = Object.freeze({
-  Glass: 'recyclable',
-  Metal: 'recyclable',
-  Plastic: 'recyclable',
-  Trash: 'other',
+  Can: 'recyclable',
+  Cardboard: 'recyclable',
+  Carton: 'recyclable',
+  'Drink container': 'recyclable',
+  'Glass bottle': 'recyclable',
+  'Food leftover': 'food',
+  Cloth: 'other',
+  'Food packaging': 'other',
+  'Pile of Leaves': 'other',
+  'Useless bag': 'other',
+  'Fallen tree': 'large',
   Kitchen: 'food',
   Hazardous: 'hazardous',
   Large: 'large',
