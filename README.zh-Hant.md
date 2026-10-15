@@ -2,11 +2,11 @@
 
 # 颱風災後地表垃圾智慧辨識系統
 
-**融合 GIS 流域解析與 YOLO 深度學習模型的颱風災後地表垃圾辨識方案 —— 以澳門為例**
+**融合 GIS 流域解析與 Roboflow 上 YOLOv12 深度學習模型的颱風災後地表垃圾辨識方案 —— 以澳門為例**
 
 [English](README.md) · 繁體中文
 
-![Python](https://img.shields.io/badge/Python-3.9%2B-3776AB?logo=python&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.10--3.13-3776AB?logo=python&logoColor=white)
 ![Roboflow Workflows](https://img.shields.io/badge/Roboflow-Workflows-6706CE)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
 ![Leaflet](https://img.shields.io/badge/Leaflet-1.9-199900?logo=leaflet&logoColor=white)
@@ -28,7 +28,7 @@
 
 | 範疇 | 功能 |
 | --- | --- |
-| **垃圾識別** | 在瀏覽器拍攝畫面並經後端 API 識別垃圾；或對攝像頭／影像串流進行連續偵測，並將附有 GPS 位置的結果記錄至 CSV |
+| **垃圾識別** | 在瀏覽器拍攝畫面並經後端 API 識別垃圾；或每隔數秒從攝像頭／影像串流取樣一幀進行偵測，並將附有 GPS 位置的結果記錄至 CSV。偵測於 Roboflow Workflow 上執行，本地無需模型權重 |
 | **垃圾分佈地圖** | 基於 Leaflet 的地圖，支援按類別篩選、加權熱力圖、點擊地圖報告垃圾及 CSV 匯入匯出 |
 | **區域預覽** | 各堂區及區域的小地圖；點擊即可將主地圖移至該區 |
 | **天氣與空氣品質** | 當前天氣、未來七日及逐小時預報（Open-Meteo）；每 15 分鐘自動刷新的實時空氣品質指數（WAQI） |
@@ -70,13 +70,14 @@ flowchart LR
 .
 ├── backend/
 │   ├── garbage_detection/
-│   │   ├── config.py           # 路徑與預設值
+│   │   ├── config.py           # 路徑、Roboflow Workflow 設定與預設值
 │   │   ├── detector.py         # Roboflow Workflow 客戶端及按類別計數
 │   │   ├── geo.py              # 串口 GPS 及模擬定位
 │   │   ├── records.py          # CSV 偵測記錄
-│   │   ├── live.py             # 命令列工具：即時攝像頭偵測
+│   │   ├── live.py             # 命令列工具：取樣幀的攝像頭偵測
 │   │   └── server.py           # 供儀表板使用的 HTTP API
 │   ├── tests/                  # 單元測試及 Workflow 線上冒煙測試
+│   │   └── fixtures/           # 供單元測試重播的已錄製 Workflow 回應
 │   ├── pyproject.toml          # Ruff 與 pytest 設定
 │   ├── requirements.txt
 │   └── requirements-dev.txt
@@ -90,16 +91,21 @@ flowchart LR
 │       ├── data/               # 垃圾分類、區域、避險中心、天氣代碼
 │       ├── features/           # 每個儀表板功能一個模組
 │       └── utils/              # DOM、CSV 及隨機數工具
-└── data/
-    └── gis/
-        └── cadmapper-macau-mo.zip  # 澳門 3D 城市模型（SketchUp，來自 CADMapper）
+├── data/
+│   └── gis/
+│       └── cadmapper-macau-mo.zip  # 澳門 3D 城市模型（SketchUp，來自 CADMapper）
+├── README.md                   # 英文說明
+└── README.zh-Hant.md
 ```
+
+攝像頭偵測記錄會寫入 `data/detections.csv`，該檔案已被 git 忽略。
 
 ## 快速開始
 
 ### 環境要求
 
-- Python 3.9 或以上
+- Python 3.10 至 3.13（Roboflow `inference-sdk` 的要求）
+- 網絡連線：偵測經 Roboflow serverless API 執行
 - 現代瀏覽器（Chrome、Edge、Firefox 或 Safari）
 - Roboflow API 金鑰，用於偵測（見下文）
 - 可選：網絡攝像頭或影像串流，以及串口 GPS 模組
@@ -121,11 +127,13 @@ python3 -m http.server 8080 --directory frontend
 ```bash
 cd backend
 python3 -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate            # Windows：.venv\Scripts\activate
 pip install -r requirements.txt
-export ROBOFLOW_API_KEY=...   # Windows：set ROBOFLOW_API_KEY=...
+export ROBOFLOW_API_KEY=...          # cmd：set ROBOFLOW_API_KEY=...  PowerShell：$env:ROBOFLOW_API_KEY="..."
 uvicorn garbage_detection.server:app --port 8000
 ```
+
+未設定 `ROBOFLOW_API_KEY` 時伺服器將無法啟動。每次偵測即一次 Roboflow serverless 呼叫，會消耗帳戶額度。
 
 | 端點 | 說明 |
 | --- | --- |
@@ -209,7 +217,7 @@ ruff check .
 
 ### 偵測模型
 
-偵測經 Roboflow serverless API 執行 Roboflow Workflow **Disaster new v2 Logic**（`disaster-ial0o/disaster-new-v2-logic`），本倉庫不再存放任何權重。Workflow 只有一個輸入 `image`，沒有其他參數。它包裝了 `disaster-new` Workflow，後者運行 YOLOv12n 模型 `disaster-new/2`（精確度 89.5%、召回率 82.8%、mAP@50 86.8%）。
+偵測經 Roboflow serverless API 執行 Roboflow Workflow **Disaster new v2 Logic**（`disaster-ial0o/disaster-new-v2-logic`），本倉庫不再存放任何權重。Workflow 只有一個輸入 `image`，沒有其他參數。它包裝了 `disaster-new` Workflow，後者運行 YOLOv12n 模型 `disaster-new/2`（精確度 89.5%、召回率 82.8%、mAP@50 86.8%，與上述研究結果相同）。
 
 其唯一輸出 `predictions` 為物件偵測結果。`backend/garbage_detection/detector.py` 只讀取每個偵測框的 `class`、`confidence`、`x`、`y`（框中心）、`width` 及 `height`：
 
@@ -219,7 +227,7 @@ ruff check .
                                    "x": 323, "y": 406, "width": 30, "height": 42, "...": "..."}]}}]
 ```
 
-該模型的數據集合併了部分研究類別，因此可識別 **11 類**：`Can`、`Cardboard`、`Carton`、`Cloth`、`Drink container`、`Fallen tree`、`Food leftover`、`Food packaging`、`Glass bottle`、`Pile of Leaves` 及 `Useless bag`。
+其 Roboflow 數據集將垃圾歸納為比上述研究分類更少的類別，因此部署的模型可識別 **11 類**：`Can`、`Cardboard`、`Carton`、`Cloth`、`Drink container`、`Fallen tree`、`Food leftover`、`Food packaging`、`Glass bottle`、`Pile of Leaves` 及 `Useless bag`。儀表板在 `frontend/js/data/garbage-types.js` 中為每類指定分類及中英文標籤。
 
 在 Python 中呼叫 `run_disaster_workflow(create_client(), image)`，可傳入 BGR `numpy` 圖片、檔案路徑或 https 網址。每次呼叫設有 30 秒逾時，並會對逾時、連線錯誤及 HTTP 429/5xx 以指數退避最多重試 2 次。失敗時拋出 `WorkflowError` 子類別：`WorkflowConfigError`（缺少 API 金鑰）、`WorkflowRequestError`／`WorkflowTimeoutError`，以及 `WorkflowResponseError`（回應格式不符）。
 
@@ -268,7 +276,7 @@ Ao Chun Meng · Leong Hou Wang · Sao Cheng Tai · Sam U Hin · Wong Chi Yu
 
 ## 授權
 
-本項目採用 [GNU Affero General Public License v3.0](https://www.gnu.org/licenses/agpl-3.0.html) 授權，與 Ultralytics YOLO 相同。
+本項目採用 [GNU Affero General Public License v3.0](https://www.gnu.org/licenses/agpl-3.0.html) 授權。
 
 ## 致謝
 

@@ -2,11 +2,11 @@
 
 # Post-Disaster Surface Garbage Recognition
 
-**GIS watershed analysis and YOLO object detection for post-typhoon garbage mapping — a case study of Macau**
+**GIS watershed analysis and YOLOv12 object detection on Roboflow for post-typhoon garbage mapping — a case study of Macau**
 
 English · [繁體中文](README.zh-Hant.md)
 
-![Python](https://img.shields.io/badge/Python-3.9%2B-3776AB?logo=python&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.10--3.13-3776AB?logo=python&logoColor=white)
 ![Roboflow Workflows](https://img.shields.io/badge/Roboflow-Workflows-6706CE)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
 ![Leaflet](https://img.shields.io/badge/Leaflet-1.9-199900?logo=leaflet&logoColor=white)
@@ -31,7 +31,7 @@ Together these form a *pre-disaster prediction → in-disaster monitoring → po
 
 | Area | Capabilities |
 | --- | --- |
-| **Garbage recognition** | Capture a frame in the browser and detect garbage through the backend API, or run continuous detection on a camera or stream with GPS-tagged CSV logging |
+| **Garbage recognition** | Capture a frame in the browser and detect garbage through the backend API, or sample frames from a camera or stream every few seconds with GPS-tagged CSV logging. Detection runs on a Roboflow Workflow, so no model weights are needed locally |
 | **Distribution map** | Leaflet map with category filters, a weighted heatmap, click-to-report, and CSV import/export |
 | **District previews** | Mini-maps of 10 parishes and districts across the peninsula, the islands and new areas; click one to move the main map there |
 | **Weather and air quality** | Current conditions plus 7-day and hourly forecasts (Open-Meteo); live AQI refreshed every 15 minutes (WAQI) |
@@ -73,13 +73,14 @@ flowchart LR
 .
 ├── backend/
 │   ├── garbage_detection/
-│   │   ├── config.py           # Paths and defaults
+│   │   ├── config.py           # Paths, Roboflow Workflow settings and defaults
 │   │   ├── detector.py         # Roboflow Workflow client and per-class counting
 │   │   ├── geo.py              # Serial GPS and simulated location sources
 │   │   ├── records.py          # CSV detection log
-│   │   ├── live.py             # CLI: real-time camera detection
+│   │   ├── live.py             # CLI: live-camera detection on sampled frames
 │   │   └── server.py           # HTTP API for the dashboard
 │   ├── tests/                  # Unit tests, plus a live workflow smoke test
+│   │   └── fixtures/           # Recorded workflow response replayed by the unit tests
 │   ├── pyproject.toml          # Ruff and pytest configuration
 │   ├── requirements.txt
 │   └── requirements-dev.txt
@@ -93,18 +94,23 @@ flowchart LR
 │       ├── data/               # Garbage taxonomy, districts, shelters, weather codes
 │       ├── features/           # One module per dashboard feature
 │       └── utils/              # DOM, CSV and random helpers
-└── data/
-    └── gis/
-        └── cadmapper-macau-mo.zip  # 3D city model of Macau (SketchUp, from CADMapper)
+├── data/
+│   └── gis/
+│       └── cadmapper-macau-mo.zip  # 3D city model of Macau (SketchUp, from CADMapper)
+├── README.md
+└── README.zh-Hant.md           # Traditional Chinese README
 ```
+
+Live-camera logs are written to `data/detections.csv`, which is git-ignored.
 
 ## Getting started
 
 ### Prerequisites
 
-- Python 3.9 or later
+- Python 3.10 to 3.13 (required by Roboflow's `inference-sdk`)
+- Internet access: detection runs on Roboflow's serverless API
 - A modern browser (Chrome, Edge, Firefox or Safari)
-- A Roboflow API key, for detection (see below)
+- A Roboflow API key, for detection (see [Detection API](#2-detection-api))
 - Optional: a webcam or video stream, and a serial GPS module
 
 ### 1. Web dashboard
@@ -126,11 +132,13 @@ Camera recognition mode sends captured frames to this API, which runs them throu
 ```bash
 cd backend
 python3 -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate            # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-export ROBOFLOW_API_KEY=...   # Windows: set ROBOFLOW_API_KEY=...
+export ROBOFLOW_API_KEY=...          # cmd: set ROBOFLOW_API_KEY=...  PowerShell: $env:ROBOFLOW_API_KEY="..."
 uvicorn garbage_detection.server:app --port 8000
 ```
+
+The server refuses to start if `ROBOFLOW_API_KEY` is not set. Each detection is one Roboflow serverless call and uses your account's credits.
 
 | Endpoint | Description |
 | --- | --- |
@@ -214,7 +222,7 @@ It was trained for 300 epochs (best at epoch 255). The augmentations were horizo
 
 ### Detection model
 
-Detection runs on the Roboflow Workflow **Disaster new v2 Logic** (`disaster-ial0o/disaster-new-v2-logic`) on Roboflow's serverless API; no weights are stored in this repository. The workflow takes one input, `image`, and has no other parameters. It wraps the `disaster-new` workflow, which runs the YOLOv12n model `disaster-new/2` (precision 89.5%, recall 82.8%, mAP@50 86.8%).
+Detection runs on the Roboflow Workflow **Disaster new v2 Logic** (`disaster-ial0o/disaster-new-v2-logic`) on Roboflow's serverless API; no weights are stored in this repository. The workflow takes one input, `image`, and has no other parameters. It wraps the `disaster-new` workflow, which runs the YOLOv12n model `disaster-new/2` (precision 89.5%, recall 82.8%, mAP@50 86.8%, the same scores as the research results above).
 
 Its single output, `predictions`, holds object detections. `backend/garbage_detection/detector.py` reads only each box's `class`, `confidence`, `x`, `y` (box centre), `width` and `height`:
 
@@ -224,7 +232,7 @@ Its single output, `predictions`, holds object detections. `backend/garbage_dete
                                    "x": 323, "y": 406, "width": 30, "height": 42, "...": "..."}]}}]
 ```
 
-The model's dataset merges some research classes, so it detects **11 classes**: `Can`, `Cardboard`, `Carton`, `Cloth`, `Drink container`, `Fallen tree`, `Food leftover`, `Food packaging`, `Glass bottle`, `Pile of Leaves` and `Useless bag`.
+Its Roboflow dataset groups the garbage into fewer classes than the research taxonomy above, so the deployed model detects **11 classes**: `Can`, `Cardboard`, `Carton`, `Cloth`, `Drink container`, `Fallen tree`, `Food leftover`, `Food packaging`, `Glass bottle`, `Pile of Leaves` and `Useless bag`. The dashboard maps each to a category and an English/Chinese label in `frontend/js/data/garbage-types.js`.
 
 From Python, call `run_disaster_workflow(create_client(), image)`. It accepts a BGR `numpy` image, a file path or an https URL. Each call has a 30 s timeout and up to 2 retries with exponential backoff for timeouts, connection errors and HTTP 429/5xx. Failures raise `WorkflowError` subclasses: `WorkflowConfigError` (no API key), `WorkflowRequestError` / `WorkflowTimeoutError`, and `WorkflowResponseError` (unexpected payload).
 
@@ -273,7 +281,7 @@ Ao Chun Meng · Leong Hou Wang · Sao Cheng Tai · Sam U Hin · Wong Chi Yu
 
 ## License
 
-Licensed under the [GNU Affero General Public License v3.0](https://www.gnu.org/licenses/agpl-3.0.html), the same license as Ultralytics YOLO.
+Licensed under the [GNU Affero General Public License v3.0](https://www.gnu.org/licenses/agpl-3.0.html).
 
 ## Acknowledgements
 
