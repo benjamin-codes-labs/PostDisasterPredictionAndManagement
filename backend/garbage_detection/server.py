@@ -46,9 +46,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Garbage Detection API", lifespan=lifespan)
+cors_origins = os.environ.get("CORS_ALLOW_ORIGINS", DEFAULT_CORS_ORIGINS)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.environ.get("CORS_ALLOW_ORIGINS", DEFAULT_CORS_ORIGINS).split(","),
+    allow_origins=[origin.strip() for origin in cors_origins.split(",")],
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )

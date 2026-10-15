@@ -4,6 +4,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import requests
 from inference_sdk.http.errors import HTTPCallErrorError, HTTPClientError
 
 from garbage_detection import detector
@@ -88,7 +89,15 @@ def test_run_sends_image_to_the_workflow():
     assert call["images"]["image"] is BLANK
 
 
-@pytest.mark.parametrize("error", [http_error(503), http_error(429), HTTPClientError("connection reset")])
+@pytest.mark.parametrize(
+    "error",
+    [
+        http_error(503),
+        http_error(429),
+        HTTPClientError("connection reset"),
+        requests.exceptions.ChunkedEncodingError("connection broken mid-response"),
+    ],
+)
 def test_run_retries_transient_failures(error):
     client = FakeClient(error, RECORDED_RESPONSE)
 
@@ -115,6 +124,22 @@ def test_run_does_not_retry_client_errors():
         run_disaster_workflow(client, BLANK)
 
     assert raised.value.status_code == 401
+    assert len(client.calls) == 1
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        requests.exceptions.JSONDecodeError("Expecting value", "<html>", 0),
+        KeyError("outputs"),
+    ],
+)
+def test_run_reports_undecodable_responses(error):
+    client = FakeClient(error, RECORDED_RESPONSE)
+
+    with pytest.raises(WorkflowResponseError):
+        run_disaster_workflow(client, BLANK)
+
     assert len(client.calls) == 1
 
 

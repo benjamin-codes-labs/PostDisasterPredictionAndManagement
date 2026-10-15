@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, TypeVar, Union
 
 import numpy as np
+import requests
 from inference_sdk import InferenceConfiguration, InferenceHTTPClient
 from inference_sdk.http.errors import HTTPCallErrorError, HTTPClientError
 
@@ -113,7 +114,10 @@ def fetch_workflow_outputs(
                 ),
                 timeout,
             )
-        except (HTTPClientError, TimeoutError) as error:
+        except (KeyError, ValueError) as error:
+            # Raised by the SDK while decoding a 200 response that is not workflow output JSON.
+            raise WorkflowResponseError(f"Unexpected workflow response: {error!r}") from error
+        except (HTTPClientError, TimeoutError, requests.RequestException) as error:
             failure = _as_request_error(error)
             if attempt == retries or not _is_retryable(error):
                 raise failure from error
@@ -178,7 +182,7 @@ def _is_retryable(error: Exception) -> bool:
     """Timeouts, lost connections and transient server errors are worth retrying."""
     if isinstance(error, HTTPCallErrorError):
         return error.status_code in RETRYABLE_STATUS_CODES
-    return isinstance(error, TimeoutError) or type(error) is HTTPClientError
+    return isinstance(error, (TimeoutError, requests.RequestException)) or type(error) is HTTPClientError
 
 
 def _as_request_error(error: Exception) -> WorkflowRequestError:

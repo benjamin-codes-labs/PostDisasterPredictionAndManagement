@@ -1,4 +1,5 @@
 inference-sdk>=1.5
+requests>=2.28
 opencv-python>=4.8
 numpy>=1.24
 pyserial>=3.5

@@ -5,6 +5,8 @@ from __future__ import annotations
 import abc
 import logging
 import random
+import threading
+import time
 from dataclasses import dataclass
 
 import serial
@@ -28,6 +30,9 @@ class BoundingBox:
 
 # Covers the Macau Peninsula, Taipa, Cotai and Coloane.
 MACAU_BOUNDS = BoundingBox(south=22.1, west=113.5, north=22.3, east=113.6)
+
+# A GPS fix older than this is treated as lost.
+MAX_FIX_AGE_SECONDS = 10.0
 
 
 class Locator(abc.ABC):
@@ -56,16 +61,43 @@ class SimulatedLocator(Locator):
 
 
 class SerialGpsLocator(Locator):
-    """Reads positions from a GPS module that prints ``<longitude>,<latitude>`` lines over serial."""
+    """Reads positions from a GPS module that prints ``<longitude>,<latitude>`` lines over serial.
 
-    def __init__(self, port: str, baud_rate: int, timeout: float = 1.0) -> None:
+    A background thread reads every line as it arrives, so ``locate`` returns the newest fix instead of
+    the oldest line waiting in the serial buffer.
+    """
+
+    def __init__(
+        self, port: str, baud_rate: int, timeout: float = 1.0, max_fix_age: float = MAX_FIX_AGE_SECONDS
+    ) -> None:
         self._serial = serial.Serial(port, baud_rate, timeout=timeout)
+        self._max_fix_age = max_fix_age
+        self._latest: tuple[float, Coordinate] | None = None
+        self._closed = threading.Event()
+        self._reader = threading.Thread(target=self._read_lines, daemon=True)
+        self._reader.start()
 
     def locate(self) -> Coordinate | None:
-        return parse_position(self._serial.readline().decode("ascii", errors="ignore"))
+        latest = self._latest
+        if latest is None or time.monotonic() - latest[0] > self._max_fix_age:
+            return None
+        return latest[1]
 
     def close(self) -> None:
+        self._closed.set()
+        self._reader.join(timeout=5)
         self._serial.close()
+
+    def _read_lines(self) -> None:
+        while not self._closed.is_set():
+            try:
+                line = self._serial.readline()
+            except serial.SerialException as error:
+                logger.warning("Lost the GPS connection (%s); using simulated positions", error)
+                return
+            position = parse_position(line.decode("ascii", errors="ignore"))
+            if position is not None:
+                self._latest = (time.monotonic(), position)
 
 
 class FallbackLocator(Locator):

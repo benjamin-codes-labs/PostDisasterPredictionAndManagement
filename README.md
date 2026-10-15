@@ -161,7 +161,7 @@ The preview window shows the live feed. Every `--log-interval` seconds one frame
 | Option | Default | Description |
 | --- | --- | --- |
 | `--source` | `0` | Camera index or stream URL, e.g. an ESP32-CAM at `http://192.168.50.10:81/stream` |
-| `--gps-port` | none | Serial port of a GPS module that prints `longitude,latitude` lines. If omitted or unavailable, positions are simulated within Macau |
+| `--gps-port` | none | Serial port of a GPS module that prints `longitude,latitude` lines. Detections are tagged with its most recent position. If omitted or unavailable, or if it sends no position for 10 s, positions are simulated within Macau |
 | `--baud-rate` | `115200` | GPS baud rate |
 | `--output` | `data/detections.csv` | CSV log to append to |
 | `--confidence` | `0.25` | Discard detections below this confidence (applied after the workflow's own threshold) |

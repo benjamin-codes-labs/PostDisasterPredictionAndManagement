@@ -156,7 +156,7 @@ python -m garbage_detection.live --source 0 --gps-port COM3
 | 參數 | 預設值 | 說明 |
 | --- | --- | --- |
 | `--source` | `0` | 攝像頭編號或串流網址，例如 ESP32-CAM 的 `http://192.168.50.10:81/stream` |
-| `--gps-port` | 無 | 輸出 `經度,緯度` 格式的 GPS 模組串口；未提供或無法連接時，會在澳門範圍內模擬位置 |
+| `--gps-port` | 無 | 輸出 `經度,緯度` 格式的 GPS 模組串口；偵測會標註其最新位置；未提供、無法連接或 10 秒內未有新位置時，會在澳門範圍內模擬位置 |
 | `--baud-rate` | `115200` | GPS 波特率 |
 | `--output` | `data/detections.csv` | 追加寫入的 CSV 記錄檔 |
 | `--confidence` | `0.25` | 捨棄低於此置信度的偵測（在 Workflow 自身的閾值之後套用） |
